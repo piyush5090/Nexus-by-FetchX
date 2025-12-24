@@ -8,7 +8,7 @@ import { LuChevronLeft, LuChevronRight, LuLoader, LuLayers, LuZap } from 'react-
 
 const Home = () => {
   const dispatch = useDispatch();
-  const { query, mediaType, page, items, status } = useSelector((state) => state.media);
+  const { query, mediaType, page, items, status, error } = useSelector((state) => state.media);
 
   // Effect for fetching media items
   useEffect(() => {
@@ -100,7 +100,12 @@ const Home = () => {
 
         {/* The Media Feed */}
         <div className="min-h-[400px]">
-          <MediaGrid key={`${query}-${mediaType}`} />
+          <MediaGrid 
+            key={`${query}-${mediaType}`} 
+            items={items} 
+            status={status} 
+            error={error}
+          />
         </div>
 
         {/* 3. Floating Modern Pagination */}

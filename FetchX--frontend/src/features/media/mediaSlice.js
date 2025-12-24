@@ -90,16 +90,54 @@ export const fetchMedia = createAsyncThunk(
   }
 );
 
+export const fetchRelatedMedia = createAsyncThunk(
+  'media/fetchRelatedMedia',
+  async (_, { getState }) => {
+    const { query: originalQuery, mediaType, selectedItem, relatedItemsPage } = getState().media;
+
+    // Use the first tag of the selected item, or fall back to the original query
+    const relatedQuery = selectedItem.tags?.[0] || originalQuery;
+    const page = relatedItemsPage;
+    
+    let promises = [];
+    if (mediaType === 'images') {
+      promises = [
+        fetchPexels('images', relatedQuery, page).then(data => data.items.map(item => normalizePexels(item, 'images'))),
+        fetchUnsplash(relatedQuery, page).then(data => data.items.map(normalizeUnsplash)),
+        fetchPixabay('photos', relatedQuery, page).then(data => data.items.map(item => normalizePixabay(item, 'images'))),
+      ];
+    } else if (mediaType === 'videos') {
+      promises = [
+        fetchPexels('videos', relatedQuery, page).then(data => data.items.map(item => normalizePexels(item, 'videos'))),
+        fetchPixabay('videos', relatedQuery, page).then(data => data.items.map(item => normalizePixabay(item, 'videos'))),
+      ];
+    }
+
+    const results = await Promise.allSettled(promises);
+    const combinedMedia = results
+      .filter(result => result.status === 'fulfilled')
+      .flatMap(result => result.value)
+      // Filter out the item we're already viewing
+      .filter(item => item.id !== selectedItem.id);
+
+    return combinedMedia.sort(() => Math.random() - 0.5);
+  }
+);
+
 const initialState = {
   items: [],
   query: '',
   mediaType: 'images',
   page: 1,
-  status: 'idle', // 'idle' | 'loading' | 'succeeded' | 'failed'
+  status: 'idle',
   error: null,
   selectedItem: null,
   providerCounts: null,
   countsStatus: 'idle',
+  // New state for related media
+  relatedItems: [],
+  relatedItemsPage: 1,
+  relatedItemsStatus: 'idle',
 };
 
 const mediaSlice = createSlice({
@@ -111,28 +149,25 @@ const mediaSlice = createSlice({
       state.mediaType = action.payload.mediaType;
       state.page = 1;
       state.items = [];
-      // Reset counts when a new search is initiated
       state.providerCounts = null;
       state.countsStatus = 'idle';
-    },
-    setQuery: (state, action) => {
-      state.query = action.payload;
-      state.page = 1;
-      state.items = [];
-    },
-    setMediaType: (state, action) => {
-      state.mediaType = action.payload;
-      state.page = 1;
-      state.items = [];
     },
     setPage: (state, action) => {
       state.page = action.payload;
     },
     setSelectedItem: (state, action) => {
       state.selectedItem = action.payload;
+      // Reset related items when a new item is selected
+      state.relatedItems = [];
+      state.relatedItemsPage = 1;
+      state.relatedItemsStatus = 'idle';
     },
     clearSelectedItem: (state) => {
       state.selectedItem = null;
+      // Also clear related items when modal is closed
+      state.relatedItems = [];
+      state.relatedItemsPage = 1;
+      state.relatedItemsStatus = 'idle';
     },
   },
   extraReducers: (builder) => {
@@ -159,14 +194,24 @@ const mediaSlice = createSlice({
       })
       .addCase(fetchSearchCounts.rejected, (state) => {
         state.countsStatus = 'failed';
+      })
+      // Reducers for fetchRelatedMedia
+      .addCase(fetchRelatedMedia.pending, (state) => {
+        state.relatedItemsStatus = 'loading';
+      })
+      .addCase(fetchRelatedMedia.fulfilled, (state, action) => {
+        state.relatedItems.push(...action.payload);
+        state.relatedItemsPage += 1;
+        state.relatedItemsStatus = 'succeeded';
+      })
+      .addCase(fetchRelatedMedia.rejected, (state) => {
+        state.relatedItemsStatus = 'failed';
       });
   },
 });
 
 export const {
   setSearchTerms,
-  setQuery,
-  setMediaType,
   setPage,
   setSelectedItem,
   clearSelectedItem,
